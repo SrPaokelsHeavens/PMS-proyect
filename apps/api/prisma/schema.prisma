@@ -1,0 +1,334 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String     @id @default(cuid())
+  username         String     @unique
+  passwordHash     String
+  role             String     @default("ADMIN")
+  active           Boolean    @default(true)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  auditLogs        AuditLog[]
+  openedShifts     Shift[]    @relation("ShiftOpenedBy")
+  closedShifts     Shift[]    @relation("ShiftClosedBy")
+  checkedInStays   Stay[]     @relation("StayCheckedInBy")
+  checkedOutStays  Stay[]     @relation("StayCheckedOutBy")
+  receivedPayments Payment[]  @relation("PaymentReceivedBy")
+  waivedOvertimes  Stay[]     @relation("StayOvertimeWaivedBy")
+}
+
+model Shift {
+  id             String    @id @default(cuid())
+  businessDate   String
+  name           String
+  status         String    @default("OPEN")
+  openedAt       DateTime  @default(now())
+  closedAt       DateTime?
+  openedByUserId String?
+  closedByUserId String?
+  openedBy       User?     @relation("ShiftOpenedBy", fields: [openedByUserId], references: [id])
+  closedBy       User?     @relation("ShiftClosedBy", fields: [closedByUserId], references: [id])
+  checkInStays   Stay[]    @relation("StayCheckInShift")
+  checkOutStays  Stay[]    @relation("StayCheckOutShift")
+  payments       Payment[]
+
+  @@index([businessDate, status])
+  @@index([openedByUserId])
+}
+
+model Room {
+  id            String         @id @default(cuid())
+  number        String         @unique
+  floor         Int
+  type          String
+  shortLabel    String
+  status        String         @default("AVAILABLE")
+  active        Boolean        @default(true)
+  notes         String         @default("")
+  roomGroupId   String?
+  baseRateCents Int
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  roomGroup     RoomGroup?     @relation(fields: [roomGroupId], references: [id])
+  stays         Stay[]
+  charges       Charge[]
+  ratePlans     RateRoom[]
+  rates         Rate[]
+  overtimeRules OvertimeRule[]
+
+  @@index([roomGroupId])
+}
+
+model RoomGroup {
+  id            String         @id @default(cuid())
+  name          String         @unique
+  active        Boolean        @default(true)
+  notes         String         @default("")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  rooms         Room[]
+  rates         Rate[]
+  overtimeRules OvertimeRule[]
+}
+
+model DayGroup {
+  id            String         @id @default(cuid())
+  name          String         @unique
+  daysOfWeek    String
+  active        Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  rates         Rate[]
+  overtimeRules OvertimeRule[]
+}
+
+model HourPlan {
+  id            String         @id @default(cuid())
+  name          String         @unique
+  hours         Int
+  active        Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  rates         Rate[]
+  stays         Stay[]
+  overtimeRules OvertimeRule[]
+}
+
+model Rate {
+  id          String     @id @default(cuid())
+  name        String
+  roomGroupId String?
+  roomId      String?
+  dayGroupId  String
+  hourPlanId  String
+  priceCents  Int
+  active      Boolean    @default(true)
+  priority    Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  roomGroup   RoomGroup? @relation(fields: [roomGroupId], references: [id])
+  room        Room?      @relation(fields: [roomId], references: [id])
+  dayGroup    DayGroup   @relation(fields: [dayGroupId], references: [id])
+  hourPlan    HourPlan   @relation(fields: [hourPlanId], references: [id])
+  stays       Stay[]
+
+  @@index([roomGroupId])
+  @@index([roomId])
+  @@index([dayGroupId])
+  @@index([hourPlanId])
+}
+
+model OvertimeRule {
+  id             String     @id @default(cuid())
+  name           String
+  graceMinutes   Int
+  extraHourCents Int
+  roomGroupId    String?
+  roomId         String?
+  dayGroupId     String?
+  hourPlanId     String?
+  active         Boolean    @default(true)
+  priority       Int        @default(0)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  roomGroup      RoomGroup? @relation(fields: [roomGroupId], references: [id])
+  room           Room?      @relation(fields: [roomId], references: [id])
+  dayGroup       DayGroup?  @relation(fields: [dayGroupId], references: [id])
+  hourPlan       HourPlan?  @relation(fields: [hourPlanId], references: [id])
+  stays          Stay[]
+
+  @@index([roomGroupId])
+  @@index([roomId])
+  @@index([dayGroupId])
+  @@index([hourPlanId])
+}
+
+model RatePlan {
+  id         String     @id @default(cuid())
+  name       String
+  stayHours  Int
+  priceCents Int
+  daysOfWeek String
+  active     Boolean    @default(true)
+  priority   Int        @default(0)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  rooms      RateRoom[]
+}
+
+model RateRoom {
+  id         String   @id @default(cuid())
+  roomId     String
+  ratePlanId String
+  createdAt  DateTime @default(now())
+  room       Room     @relation(fields: [roomId], references: [id])
+  ratePlan   RatePlan @relation(fields: [ratePlanId], references: [id])
+
+  @@unique([roomId, ratePlanId])
+  @@index([ratePlanId])
+}
+
+model Guest {
+  id             String      @id @default(cuid())
+  documentType   String      @default("DNI")
+  documentNumber String
+  fullName       String
+  birthDate      DateTime?
+  district       String      @default("")
+  occupation     String      @default("")
+  phone          String      @default("")
+  email          String      @default("")
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  stays          Stay[]
+  stayGuests     StayGuest[]
+  charges        Charge[]
+
+  @@index([documentNumber])
+}
+
+model Stay {
+  id                     String        @id @default(cuid())
+  roomId                 String
+  guestId                String
+  checkInShiftId         String?
+  checkOutShiftId        String?
+  checkedInByUserId      String?
+  checkedOutByUserId     String?
+  overtimeWaivedByUserId String?
+  rateId                 String?
+  hourPlanId             String?
+  overtimeRuleId         String?
+  status                 String        @default("OPEN")
+  timingStatus           String        @default("ON_TIME")
+  checkInAt              DateTime      @default(now())
+  plannedCheckOutAt      DateTime?
+  checkOutAt             DateTime?
+  stayHours              Int
+  extraMinutes           Int           @default(0)
+  rateCents              Int
+  overtimeGraceMinutes   Int           @default(0)
+  extraHourCents         Int           @default(0)
+  overtimeMinutes        Int           @default(0)
+  overtimeChargeCents    Int           @default(0)
+  overtimeWaivedAt       DateTime?
+  overtimeWaiverReason   String        @default("")
+  notes                  String        @default("")
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  room                   Room          @relation(fields: [roomId], references: [id])
+  guest                  Guest         @relation(fields: [guestId], references: [id])
+  checkInShift           Shift?        @relation("StayCheckInShift", fields: [checkInShiftId], references: [id])
+  checkOutShift          Shift?        @relation("StayCheckOutShift", fields: [checkOutShiftId], references: [id])
+  checkedInBy            User?         @relation("StayCheckedInBy", fields: [checkedInByUserId], references: [id])
+  checkedOutBy           User?         @relation("StayCheckedOutBy", fields: [checkedOutByUserId], references: [id])
+  overtimeWaivedBy       User?         @relation("StayOvertimeWaivedBy", fields: [overtimeWaivedByUserId], references: [id])
+  rate                   Rate?         @relation(fields: [rateId], references: [id])
+  hourPlan               HourPlan?     @relation(fields: [hourPlanId], references: [id])
+  overtimeRule           OvertimeRule? @relation(fields: [overtimeRuleId], references: [id])
+  stayGuests             StayGuest[]
+  charges                Charge[]
+  payments               Payment[]
+
+  @@index([roomId, status])
+  @@index([guestId])
+  @@index([checkInShiftId])
+  @@index([checkOutShiftId])
+  @@index([checkedInByUserId])
+  @@index([overtimeWaivedByUserId])
+  @@index([rateId])
+  @@index([hourPlanId])
+  @@index([overtimeRuleId])
+}
+
+model StayGuest {
+  id        String   @id @default(cuid())
+  stayId    String
+  guestId   String
+  role      String   @default("PRIMARY")
+  createdAt DateTime @default(now())
+  stay      Stay     @relation(fields: [stayId], references: [id])
+  guest     Guest    @relation(fields: [guestId], references: [id])
+
+  @@unique([stayId, guestId, role])
+  @@index([guestId])
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  sku            String   @unique
+  name           String
+  category       String
+  unitPriceCents Int
+  stock          Int
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  charges        Charge[]
+}
+
+model Charge {
+  id             String   @id @default(cuid())
+  stayId         String?
+  roomId         String?
+  productId      String?
+  guestId        String?
+  chargeType     String   @default("OTHER")
+  description    String
+  quantity       Int
+  unitPriceCents Int
+  totalCents     Int
+  paymentMethod  String   @default("ROOM_ACCOUNT")
+  status         String   @default("POSTED")
+  createdAt      DateTime @default(now())
+  stay           Stay?    @relation(fields: [stayId], references: [id])
+  room           Room?    @relation(fields: [roomId], references: [id])
+  product        Product? @relation(fields: [productId], references: [id])
+  guest          Guest?   @relation(fields: [guestId], references: [id])
+
+  @@index([stayId])
+  @@index([roomId])
+  @@index([guestId])
+  @@index([productId])
+}
+
+model Payment {
+  id                String   @id @default(cuid())
+  stayId            String
+  shiftId           String?
+  receivedByUserId  String?
+  type              String
+  method            String
+  amountCents       Int
+  paidAt            DateTime @default(now())
+  externalReference String   @default("")
+  notes             String   @default("")
+  stay              Stay     @relation(fields: [stayId], references: [id])
+  shift             Shift?   @relation(fields: [shiftId], references: [id])
+  receivedBy        User?    @relation("PaymentReceivedBy", fields: [receivedByUserId], references: [id])
+
+  @@index([stayId])
+  @@index([shiftId])
+  @@index([receivedByUserId])
+  @@index([paidAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String
+  metadata  String   @default("{}")
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+}
