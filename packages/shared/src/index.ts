@@ -51,14 +51,19 @@ export const updateRoomStatusSchema = z.object({
 export const roomConfigSchema = z.object({
   number: z.string().trim().min(1).max(20),
   floor: z.coerce.number().int().min(0).max(99),
-  type: z.string().trim().min(2).max(80),
   shortLabel: z.string().trim().min(1).max(8),
-  roomGroupId: z.string().min(1).optional().or(z.literal("")).default(""),
+  roomTypeId: z.string().min(1).optional().or(z.literal("")).default(""),
   baseRateCents: z.coerce.number().int().nonnegative(),
   active: z.coerce.boolean().default(true),
   notes: z.string().trim().max(1000).optional().default(""),
   status: roomStatusSchema.default("AVAILABLE")
 });
+
+export const roomRangeSchema = z.object({
+  from: z.coerce.number().int().min(1).max(9999),
+  to: z.coerce.number().int().min(1).max(9999)
+}).refine((value) => value.from <= value.to, "Room range start must be lower than or equal to range end")
+  .refine((value) => value.to - value.from <= 300, "Room range cannot create more than 301 rooms at once");
 
 export const updateRoomConfigSchema = roomConfigSchema.partial().refine(
   (value) => Object.keys(value).length > 0,
@@ -98,10 +103,11 @@ export const updateRatePlanSchema = createRatePlanSchema.partial().refine(
   "At least one rate plan field is required"
 );
 
-export const roomGroupSchema = z.object({
+export const roomTypeSchema = z.object({
   name: z.string().trim().min(2).max(120),
+  description: z.string().trim().max(1000).optional().default(""),
+  features: z.array(z.string().trim().min(1).max(120)).max(60).default([]),
   active: z.coerce.boolean().default(true),
-  notes: z.string().trim().max(1000).optional().default("")
 });
 
 export const dayGroupSchema = z.object({
@@ -118,7 +124,7 @@ export const hourPlanSchema = z.object({
 
 export const rateConfigSchema = z.object({
   name: z.string().trim().min(2).max(120),
-  roomGroupId: z.string().min(1).optional().or(z.literal("")).default(""),
+  roomTypeId: z.string().min(1).optional().or(z.literal("")).default(""),
   roomId: z.string().min(1).optional().or(z.literal("")).default(""),
   dayGroupId: z.string().min(1),
   hourPlanId: z.string().min(1),
@@ -126,15 +132,15 @@ export const rateConfigSchema = z.object({
   active: z.coerce.boolean().default(true),
   priority: z.coerce.number().int().min(0).max(1000).default(0)
 }).refine(
-  (value) => Boolean(value.roomGroupId) !== Boolean(value.roomId),
-  "Select either a room group or an individual room"
+  (value) => Boolean(value.roomTypeId) !== Boolean(value.roomId),
+  "Select either a room type or an individual room"
 );
 
 export const overtimeRuleSchema = z.object({
   name: z.string().trim().min(2).max(120),
   graceMinutes: z.coerce.number().int().min(0).max(720),
   extraHourCents: z.coerce.number().int().nonnegative(),
-  roomGroupId: z.string().min(1).optional().or(z.literal("")).default(""),
+  roomTypeId: z.string().min(1).optional().or(z.literal("")).default(""),
   roomId: z.string().min(1).optional().or(z.literal("")).default(""),
   dayGroupId: z.string().min(1).optional().or(z.literal("")).default(""),
   hourPlanId: z.string().min(1).optional().or(z.literal("")).default(""),
@@ -153,15 +159,30 @@ export type CheckOutInput = z.infer<typeof checkOutSchema>;
 export type AddChargeInput = z.infer<typeof addChargeSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RoomConfigInput = z.infer<typeof roomConfigSchema>;
+export type RoomRangeInput = z.infer<typeof roomRangeSchema>;
 export type UpdateRoomConfigInput = z.infer<typeof updateRoomConfigSchema>;
 export type CreateRatePlanInput = z.infer<typeof createRatePlanSchema>;
 export type AssignRatePlanRoomsInput = z.infer<typeof assignRatePlanRoomsSchema>;
 export type UpdateRatePlanInput = z.infer<typeof updateRatePlanSchema>;
-export type RoomGroupInput = z.infer<typeof roomGroupSchema>;
+export type RoomTypeInput = z.infer<typeof roomTypeSchema>;
 export type DayGroupInput = z.infer<typeof dayGroupSchema>;
 export type HourPlanInput = z.infer<typeof hourPlanSchema>;
 export type RateConfigInput = z.infer<typeof rateConfigSchema>;
 export type OvertimeRuleInput = z.infer<typeof overtimeRuleSchema>;
+
+export type ConfigScope = "rooms" | "roomTypes" | "dayGroups" | "hourPlans" | "rates" | "overtimeRules" | "products" | "shifts";
+
+export type DomainEvent =
+  | { type: "room.created"; roomId: string }
+  | { type: "room.rangeCreated"; from: number; to: number; created: number; reactivated: number; skipped: string[] }
+  | { type: "room.updated"; roomId: string }
+  | { type: "room.deleted"; roomId: string }
+  | { type: "room.statusChanged"; roomId: string; status: RoomStatus }
+  | { type: "config.changed"; scope: ConfigScope }
+  | { type: "stay.checkedIn"; stayId: string; roomId: string }
+  | { type: "stay.checkedOut"; stayId: string; roomId: string }
+  | { type: "charge.created"; chargeId: string; stayId: string; roomId: string }
+  | { type: "shift.changed"; shiftId: string };
 
 export type ApiRoom = {
   id: string;
@@ -173,7 +194,7 @@ export type ApiRoom = {
   computedStatus: ComputedRoomStatus;
   active: boolean;
   notes: string;
-  roomGroupId: string | null;
+  roomTypeId: string | null;
   baseRateCents: number;
   activeRate: null | {
     id: string;
@@ -199,11 +220,12 @@ export type ApiRoom = {
   };
 };
 
-export type ApiRoomGroup = {
+export type ApiRoomType = {
   id: string;
   name: string;
+  description: string;
   active: boolean;
-  notes: string;
+  features: string[];
   roomCount: number;
 };
 
@@ -224,7 +246,7 @@ export type ApiHourPlan = {
 export type ApiRate = {
   id: string;
   name: string;
-  roomGroupId: string | null;
+  roomTypeId: string | null;
   roomId: string | null;
   dayGroupId: string;
   hourPlanId: string;
@@ -238,7 +260,7 @@ export type ApiOvertimeRule = {
   name: string;
   graceMinutes: number;
   extraHourCents: number;
-  roomGroupId: string | null;
+  roomTypeId: string | null;
   roomId: string | null;
   dayGroupId: string | null;
   hourPlanId: string | null;
@@ -276,7 +298,7 @@ export type ApiRateConfigRoom = {
   status: RoomStatus;
   active: boolean;
   notes: string;
-  roomGroupId: string | null;
+  roomTypeId: string | null;
   baseRateCents: number;
 };
 

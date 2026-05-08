@@ -36,7 +36,8 @@ export async function rateRoutes(app: FastifyInstance) {
         include: { rooms: true }
       }),
       prisma.room.findMany({
-        orderBy: [{ floor: "asc" }, { number: "asc" }]
+        orderBy: [{ floor: "asc" }, { number: "asc" }],
+        include: { roomType: true }
       })
     ]);
 
@@ -46,7 +47,7 @@ export async function rateRoutes(app: FastifyInstance) {
         id: room.id,
         number: room.number,
         floor: room.floor,
-        type: room.type,
+        type: room.roomType?.name || "Sin tipo",
         shortLabel: room.shortLabel,
         status: room.status,
         baseRateCents: room.baseRateCents

@@ -1,0 +1,34 @@
+erDiagram
+    USER ||--o{ SHIFT : "gestiona"
+    USER ||--o{ STAY : "registra"
+    USER ||--o{ PAYMENT : "procesa"
+    USER ||--o{ AUDIT_LOG : "genera"
+    
+    SHIFT ||--o{ STAY : "agrupa"
+    SHIFT ||--o{ PAYMENT : "cuadra"
+    
+    ROOM ||--o{ STAY : "aloja"
+    ROOM }|--|| ROOM_GROUP : "pertenece"
+    ROOM ||--o{ RATE_ROOM : "tiene"
+    ROOM ||--o{ RATE : "especifica"
+    
+    ROOM_GROUP ||--o{ RATE : "define"
+    ROOM_GROUP ||--o{ OVERTIME_RULE : "define"
+
+    STAY ||--o{ STAY_GUEST : "incluye"
+    STAY ||--o{ CHARGE : "acumula"
+    STAY ||--o{ PAYMENT : "liquida"
+    STAY }|--o| RATE : "usa"
+    STAY }|--o| OVERTIME_RULE : "aplica"
+    
+    GUEST ||--o{ STAY : "titular"
+    GUEST ||--o{ STAY_GUEST : "acompañante"
+    
+    RATE }|--|| DAY_GROUP : "condicionado por"
+    RATE }|--|| HOUR_PLAN : "duracion"
+    
+    OVERTIME_RULE }|--o| DAY_GROUP : "aplica en"
+    
+    RATE_PLAN ||--o{ RATE_ROOM : "asigna"
+    
+    PRODUCT ||--o{ CHARGE : "consumo"

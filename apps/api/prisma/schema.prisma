@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -47,35 +47,46 @@ model Room {
   id            String         @id @default(cuid())
   number        String         @unique
   floor         Int
-  type          String
   shortLabel    String
   status        String         @default("AVAILABLE")
   active        Boolean        @default(true)
   notes         String         @default("")
-  roomGroupId   String?
+  roomTypeId    String?
   baseRateCents Int
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
-  roomGroup     RoomGroup?     @relation(fields: [roomGroupId], references: [id])
+  roomType      RoomType?      @relation(fields: [roomTypeId], references: [id])
   stays         Stay[]
   charges       Charge[]
   ratePlans     RateRoom[]
   rates         Rate[]
   overtimeRules OvertimeRule[]
 
-  @@index([roomGroupId])
+  @@index([roomTypeId])
 }
 
-model RoomGroup {
+model RoomType {
   id            String         @id @default(cuid())
   name          String         @unique
+  description   String         @default("")
   active        Boolean        @default(true)
-  notes         String         @default("")
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+  features      RoomTypeFeature[]
   rooms         Room[]
   rates         Rate[]
   overtimeRules OvertimeRule[]
+}
+
+model RoomTypeFeature {
+  id         String   @id @default(cuid())
+  roomTypeId String
+  label      String
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  roomType   RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+
+  @@index([roomTypeId])
 }
 
 model DayGroup {
@@ -104,7 +115,7 @@ model HourPlan {
 model Rate {
   id          String     @id @default(cuid())
   name        String
-  roomGroupId String?
+  roomTypeId  String?
   roomId      String?
   dayGroupId  String
   hourPlanId  String
@@ -113,13 +124,13 @@ model Rate {
   priority    Int        @default(0)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
-  roomGroup   RoomGroup? @relation(fields: [roomGroupId], references: [id])
+  roomType    RoomType?  @relation(fields: [roomTypeId], references: [id])
   room        Room?      @relation(fields: [roomId], references: [id])
   dayGroup    DayGroup   @relation(fields: [dayGroupId], references: [id])
   hourPlan    HourPlan   @relation(fields: [hourPlanId], references: [id])
   stays       Stay[]
 
-  @@index([roomGroupId])
+  @@index([roomTypeId])
   @@index([roomId])
   @@index([dayGroupId])
   @@index([hourPlanId])
@@ -130,7 +141,7 @@ model OvertimeRule {
   name           String
   graceMinutes   Int
   extraHourCents Int
-  roomGroupId    String?
+  roomTypeId     String?
   roomId         String?
   dayGroupId     String?
   hourPlanId     String?
@@ -138,13 +149,13 @@ model OvertimeRule {
   priority       Int        @default(0)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
-  roomGroup      RoomGroup? @relation(fields: [roomGroupId], references: [id])
+  roomType       RoomType?  @relation(fields: [roomTypeId], references: [id])
   room           Room?      @relation(fields: [roomId], references: [id])
   dayGroup       DayGroup?  @relation(fields: [dayGroupId], references: [id])
   hourPlan       HourPlan?  @relation(fields: [hourPlanId], references: [id])
   stays          Stay[]
 
-  @@index([roomGroupId])
+  @@index([roomTypeId])
   @@index([roomId])
   @@index([dayGroupId])
   @@index([hourPlanId])

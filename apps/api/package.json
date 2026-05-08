@@ -6,11 +6,15 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
+    "test": "tsx --test \"src/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/server.js",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev --name init",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
     "db:backfill-ledger": "tsx prisma/backfill-ledger.ts",
+    "db:clear-config": "tsx prisma/clear-config.ts",
+    "db:clear-demo": "tsx prisma/clear-demo-data.ts",
     "db:seed": "tsx prisma/seed.ts"
   },
   "prisma": {
@@ -27,6 +31,7 @@
     "fastify": "^5.8.5",
     "jose": "^5.10.0",
     "pino": "^9.6.0",
+    "socket.io": "^4.8.3",
     "zod": "^3.24.2"
   },
   "devDependencies": {

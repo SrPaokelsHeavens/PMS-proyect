@@ -1,20 +1,36 @@
 import type {
   ApiProduct,
   ApiAvailableRate,
+  ApiDayGroup,
+  ApiHourPlan,
+  ApiOvertimeRule,
   ApiRateConfigRoom,
+  ApiRate,
   ApiRatePlan,
   ApiRoom,
+  ApiRoomType,
   CheckOutInput,
   CheckInInput,
   CreateRatePlanInput,
+  DayGroupInput,
   GuestHistory,
+  HourPlanInput,
+  OvertimeRuleInput,
+  RateConfigInput,
   RoomConfigInput,
+  RoomRangeInput,
+  RoomTypeInput,
   ShiftLedger,
   UpdateRatePlanInput,
   UpdateRoomConfigInput
 } from "@hotel-os/shared";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
+const configuredApiUrl = import.meta.env.VITE_API_URL as string | undefined;
+const isLocalBrowser = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+export const API_URL = configuredApiUrl && isLocalBrowser
+  ? configuredApiUrl
+  : `${window.location.protocol}//${window.location.hostname}:4000`;
+const API_PREFIX = "/api";
 
 export type Session = {
   token: string;
@@ -37,6 +53,15 @@ export class ApiError extends Error {
   }
 }
 
+export type ConfigState = {
+  roomTypes: ApiRoomType[];
+  dayGroups: ApiDayGroup[];
+  hourPlans: ApiHourPlan[];
+  rates: ApiRate[];
+  overtimeRules: ApiOvertimeRule[];
+  rooms: ApiRateConfigRoom[];
+};
+
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(options.headers);
   if (options.body && !headers.has("Content-Type")) {
@@ -46,7 +71,7 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetch(`${API_URL}${API_PREFIX}${path}`, {
     ...options,
     headers
   });
@@ -74,6 +99,15 @@ export const api = {
       body: JSON.stringify(input)
     }, token),
 
+  createRoomRange: (token: string, input: RoomRangeInput) =>
+    request<{ created: number; reactivated: number; skipped: string[] }>("/rooms/range", {
+      method: "POST",
+      body: JSON.stringify(input)
+    }, token),
+
+  deleteRoom: (token: string, roomId: string) =>
+    request<{ ok: boolean; deletedRoomId: string }>(`/rooms/${roomId}`, { method: "DELETE" }, token),
+
   updateRoom: (token: string, roomId: string, input: UpdateRoomConfigInput) =>
     request<{ room: ApiRoom }>(`/rooms/${roomId}`, {
       method: "PATCH",
@@ -82,11 +116,58 @@ export const api = {
 
   products: (token: string) => request<{ products: ApiProduct[] }>("/products", {}, token),
 
+  config: (token: string) => request<ConfigState>("/config", {}, token),
+
+  createRoomType: (token: string, input: RoomTypeInput) =>
+    request<{ roomType: ApiRoomType }>("/config/room-types", {
+      method: "POST",
+      body: JSON.stringify(input)
+    }, token),
+
+  deleteRoomType: (token: string, roomTypeId: string) =>
+    request<{ roomType: ApiRoomType }>(`/config/room-types/${roomTypeId}`, { method: "DELETE" }, token),
+
+  createDayGroup: (token: string, input: DayGroupInput) =>
+    request<{ dayGroup: ApiDayGroup }>("/config/day-groups", {
+      method: "POST",
+      body: JSON.stringify(input)
+    }, token),
+
+  deleteDayGroup: (token: string, dayGroupId: string) =>
+    request<{ dayGroup: ApiDayGroup }>(`/config/day-groups/${dayGroupId}`, { method: "DELETE" }, token),
+
+  createHourPlan: (token: string, input: HourPlanInput) =>
+    request<{ hourPlan: ApiHourPlan }>("/config/hour-plans", {
+      method: "POST",
+      body: JSON.stringify(input)
+    }, token),
+
+  deleteHourPlan: (token: string, hourPlanId: string) =>
+    request<{ hourPlan: ApiHourPlan }>(`/config/hour-plans/${hourPlanId}`, { method: "DELETE" }, token),
+
+  createConfigRate: (token: string, input: RateConfigInput) =>
+    request<{ rate: ApiRate }>("/config/rates", {
+      method: "POST",
+      body: JSON.stringify(input)
+    }, token),
+
+  deleteConfigRate: (token: string, rateId: string) =>
+    request<{ rate: ApiRate }>(`/config/rates/${rateId}`, { method: "DELETE" }, token),
+
+  createOvertimeRule: (token: string, input: OvertimeRuleInput) =>
+    request<{ overtimeRule: ApiOvertimeRule }>("/config/overtime-rules", {
+      method: "POST",
+      body: JSON.stringify(input)
+    }, token),
+
+  deleteOvertimeRule: (token: string, overtimeRuleId: string) =>
+    request<{ overtimeRule: ApiOvertimeRule }>(`/config/overtime-rules/${overtimeRuleId}`, { method: "DELETE" }, token),
+
   rates: (token: string) =>
     request<{ ratePlans: ApiRatePlan[]; rooms: ApiRateConfigRoom[] }>("/rates", {}, token),
 
   availableRates: (token: string, roomId: string) =>
-    request<{ rates: ApiAvailableRate[] }>(`/rooms/${roomId}/available-rates`, {}, token),
+    request<{ rates: ApiAvailableRate[] }>(`/rooms/${roomId}/rates`, {}, token),
 
   createRate: (token: string, input: CreateRatePlanInput) =>
     request<{ ratePlan: ApiRatePlan }>("/rates", {

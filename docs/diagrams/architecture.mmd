@@ -1,0 +1,34 @@
+graph TD
+    subgraph Client_Layer [Frontend - React 19]
+        UI[App UI]
+        Query[TanStack Query]
+        SocketClient[Socket.io Client]
+    end
+
+    subgraph Logic_Layer [Backend - Fastify]
+        Router[API Routes]
+        Services[Stay/Guest/Shift Services]
+        Domain[Rate/Overtime Engine]
+        SocketServer[Socket.io Server]
+    end
+
+    subgraph Contract_Layer [Shared Package]
+        Types[TS Interfaces]
+        Zod[Validation Schemas]
+    end
+
+    subgraph Persistance_Layer [Data]
+        Prisma[Prisma ORM]
+        DB[(PostgreSQL)]
+    end
+
+    UI --> Query
+    Query --> Router
+    SocketClient <--> SocketServer
+    Router --> Services
+    Services --> Domain
+    Services --> Prisma
+    Prisma --> DB
+    
+    UI -.-> Contract_Layer
+    Router -.-> Contract_Layer

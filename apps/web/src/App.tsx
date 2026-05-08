@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BedDouble, LogOut, Plus, RefreshCw, Sparkles, X } from "lucide-react";
-import type { ApiAvailableRate, ApiProduct, ApiRateConfigRoom, ApiRatePlan, ApiRoom, ComputedRoomStatus, GuestHistory, PaymentMethod, RoomStatus, ShiftLedger } from "@hotel-os/shared";
-import { ApiError, api, type Session } from "./api.js";
+import type { ApiAvailableRate, ApiDayGroup, ApiHourPlan, ApiOvertimeRule, ApiProduct, ApiRate, ApiRateConfigRoom, ApiRoom, ApiRoomType, ComputedRoomStatus, GuestHistory, PaymentMethod, RoomStatus, ShiftLedger } from "@hotel-os/shared";
+import { ApiError, api, type ConfigState, type Session } from "./api.js";
+import { queryKeys } from "./queryClient.js";
+import { useRealtimeSync } from "./realtime.js";
 
 function soles(cents: number) {
   return `S/ ${(cents / 100).toFixed(2).replace(".00", "")}`;
@@ -34,29 +37,58 @@ export function App() {
     const saved = localStorage.getItem("hotel-os-session");
     return saved ? JSON.parse(saved) as Session : null;
   });
-  const [rooms, setRooms] = useState<ApiRoom[]>([]);
-  const [products, setProducts] = useState<ApiProduct[]>([]);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"reception" | "shift-ledger" | "sales" | "inventory" | "reports" | "rates">("reception");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
+  useRealtimeSync(session);
+
+  const roomsQuery = useQuery({
+    queryKey: queryKeys.rooms,
+    queryFn: () => api.rooms(session!.token),
+    enabled: Boolean(session)
+  });
+  const productsQuery = useQuery({
+    queryKey: queryKeys.products,
+    queryFn: () => api.products(session!.token),
+    enabled: Boolean(session)
+  });
+  const rooms = roomsQuery.data?.rooms ?? [];
+  const products = productsQuery.data?.products ?? [];
+  const loading = roomsQuery.isFetching || productsQuery.isFetching;
 
   const activeRoom = useMemo(
     () => rooms.find((room) => room.id === activeRoomId),
     [rooms, activeRoomId]
   );
 
+  const roomFloors = useMemo(() => {
+    const groupedRooms = new Map<number, ApiRoom[]>();
+
+    for (const room of rooms) {
+      const floorRooms = groupedRooms.get(room.floor) ?? [];
+      floorRooms.push(room);
+      groupedRooms.set(room.floor, floorRooms);
+    }
+
+    return Array.from(groupedRooms.entries())
+      .sort(([leftFloor], [rightFloor]) => leftFloor - rightFloor)
+      .map(([floor, floorRooms]) => ({
+        floor,
+        rooms: floorRooms.sort((leftRoom, rightRoom) => leftRoom.number.localeCompare(rightRoom.number, "es", { numeric: true }))
+      }));
+  }, [rooms]);
+
   async function refresh() {
     if (!session) return;
-    setLoading(true);
     setError("");
     try {
-      const [roomResponse, productResponse] = await Promise.all([
-        api.rooms(session.token),
-        api.products(session.token)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.rooms }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.products }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.config }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.shiftLedger })
       ]);
-      setRooms(roomResponse.rooms);
-      setProducts(productResponse.products);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         expireSession();
@@ -64,14 +96,14 @@ export function App() {
       }
 
       setError(err instanceof Error ? err.message : "Could not load data");
-    } finally {
-      setLoading(false);
     }
   }
 
   useEffect(() => {
-    void refresh();
-  }, [session?.token]);
+    const queryError = roomsQuery.error || productsQuery.error;
+    if (!queryError) return;
+    handleAppError(queryError);
+  }, [roomsQuery.error, productsQuery.error]);
 
   useEffect(() => {
     if (!error) return;
@@ -87,16 +119,14 @@ export function App() {
   function logout() {
     localStorage.removeItem("hotel-os-session");
     setSession(null);
-    setRooms([]);
-    setProducts([]);
+    queryClient.clear();
     setActiveRoomId(null);
   }
 
   function expireSession() {
     localStorage.removeItem("hotel-os-session");
     setSession(null);
-    setRooms([]);
-    setProducts([]);
+    queryClient.clear();
     setActiveRoomId(null);
     setError("");
   }
@@ -144,27 +174,37 @@ export function App() {
       <main className="card-dashboard">
         {error && <div className="toast">{error}</div>}
         {activeTab === "reception" ? (
-          <div className="room-grid" aria-busy={loading}>
-            {rooms.map((room) => (
-              <button
-                className={`room-card ${statusClass(room.computedStatus)}`}
-                key={room.id}
-                type="button"
-                onClick={() => setActiveRoomId(room.id)}
-              >
-                <span className="room-number">{room.number}</span>
-                <span className="room-type">{room.shortLabel}</span>
-                <span className="guest-name">{room.activeStay?.guestName || ""}</span>
-                {room.activeStay && (
-                  <span className="time-track" title="Tiempo restante">
-                    <span style={{ width: `${room.activeStay.timeProgressPercent}%` }} />
-                  </span>
-                )}
-                <span className="room-footer">
-                  <strong>{statusLabel(room.computedStatus)}</strong>
-                  <small>{room.activeStay ? soles(room.activeStay.balanceCents) : ""}</small>
-                </span>
-              </button>
+          <div className="floor-stack" aria-busy={loading}>
+            {roomFloors.map(({ floor, rooms: floorRooms }) => (
+              <section className="floor-section" key={floor} aria-label={`Piso ${floor}`}>
+                <div className="floor-label">
+                  <strong>Piso {floor}</strong>
+                  <span>{floorRooms.length} hab.</span>
+                </div>
+                <div className="room-grid floor-room-grid">
+                  {floorRooms.map((room) => (
+                    <button
+                      className={`room-card ${statusClass(room.computedStatus)}`}
+                      key={room.id}
+                      type="button"
+                      onClick={() => setActiveRoomId(room.id)}
+                    >
+                      <span className="room-number">{room.number}</span>
+                      <span className="room-type">{room.shortLabel}</span>
+                      <span className="guest-name">{room.activeStay?.guestName || ""}</span>
+                      {room.activeStay && (
+                        <span className="time-track" title="Tiempo restante">
+                          <span style={{ width: `${room.activeStay.timeProgressPercent}%` }} />
+                        </span>
+                      )}
+                      <span className="room-footer">
+                        <strong>{statusLabel(room.computedStatus)}</strong>
+                        <small>{room.activeStay ? soles(room.activeStay.balanceCents) : ""}</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         ) : activeTab === "shift-ledger" ? (
@@ -208,87 +248,109 @@ const dayOptions = [
   { value: 0, label: "Dom" }
 ];
 
+const emptyConfig: ConfigState = {
+  roomTypes: [],
+  dayGroups: [],
+  hourPlans: [],
+  rates: [],
+  overtimeRules: [],
+  rooms: []
+};
+
+type ConfigModalKind = "room" | "roomType" | "dayGroup" | "hourPlan" | "rate" | "overtime";
+
+function dayText(days: number[]) {
+  const labels = new Map(dayOptions.map((day) => [day.value, day.label]));
+  return days.map((day) => labels.get(day) || String(day)).join(", ");
+}
+
 function RateSettingsView({ token, onError, onRoomsChanged }: { token: string; onError: (error: unknown) => void; onRoomsChanged: () => Promise<void> }) {
-  const [ratePlans, setRatePlans] = useState<ApiRatePlan[]>([]);
-  const [rooms, setRooms] = useState<ApiRateConfigRoom[]>([]);
-  const [selectedRateId, setSelectedRateId] = useState("");
-  const [selectedRoomId, setSelectedRoomId] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [savingRate, setSavingRate] = useState(false);
-  const [savingRoom, setSavingRoom] = useState(false);
+  const [modal, setModal] = useState<ConfigModalKind | null>(null);
+  const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
+  const configQuery = useQuery({
+    queryKey: queryKeys.config,
+    queryFn: () => api.config(token)
+  });
+  const config = configQuery.data ?? emptyConfig;
+  const loading = configQuery.isFetching;
+  const [selectedRoomIds, setSelectedRoomIds] = useState<string[]>([]);
+  const [selectedRoomTypeIds, setSelectedRoomTypeIds] = useState<string[]>([]);
+  const [selectedHourPlanIds, setSelectedHourPlanIds] = useState<string[]>([]);
+  const [selectedDayGroupIds, setSelectedDayGroupIds] = useState<string[]>([]);
+  const [selectedRateIds, setSelectedRateIds] = useState<string[]>([]);
+  const [selectedOvertimeRuleIds, setSelectedOvertimeRuleIds] = useState<string[]>([]);
 
+  const [roomRangeForm, setRoomRangeForm] = useState({ from: "", to: "" });
+  const [roomTypeForm, setRoomTypeForm] = useState({ name: "", description: "", features: [""] });
+  const [dayGroupForm, setDayGroupForm] = useState({ name: "", daysOfWeek: [0, 1, 2, 3, 4, 5, 6] });
+  const [hourPlanForm, setHourPlanForm] = useState({ name: "", hours: 1 });
   const [rateForm, setRateForm] = useState({
-    name: "Nueva tarifa",
-    stayHours: 6,
+    name: "",
+    targetType: "type" as "type" | "room",
+    roomTypeId: "",
+    roomId: "",
+    dayGroupId: "",
+    hourPlanId: "",
     priceSoles: 0,
-    daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
-    active: true,
     priority: 10,
-    roomIds: [] as string[]
+    active: true
+  });
+  const [overtimeForm, setOvertimeForm] = useState({
+    name: "",
+    roomTypeId: "",
+    roomId: "",
+    dayGroupId: "",
+    hourPlanId: "",
+    graceMinutes: 5,
+    extraHourSoles: 0,
+    priority: 10,
+    active: true
   });
 
-  const [roomForm, setRoomForm] = useState({
-    number: "",
-    floor: 2,
-    type: "Matrimonial",
-    shortLabel: "M",
-    baseRateSoles: 50,
-    status: "AVAILABLE" as RoomStatus
-  });
-
-  const selectedRate = ratePlans.find((ratePlan) => ratePlan.id === selectedRateId);
-  const selectedRoom = rooms.find((room) => room.id === selectedRoomId);
-
+  const rooms = config.rooms;
   const statusCounts: Record<RoomStatus, number> = useMemo(() => rooms.reduce<Record<RoomStatus, number>>((totals, room) => {
     totals[room.status] += 1;
     return totals;
   }, { AVAILABLE: 0, OCCUPIED: 0, CLEANING: 0, DISABLED: 0 }), [rooms]);
 
-  async function loadRates() {
-    setLoading(true);
+  const roomsByType = useMemo(() => {
+    const grouped = new Map<string, ApiRateConfigRoom[]>();
+    for (const room of rooms) {
+      const key = room.roomTypeId || "untyped";
+      grouped.set(key, [...(grouped.get(key) || []), room]);
+    }
+    return grouped;
+  }, [rooms]);
+
+  const roomsByFloor = useMemo(() => {
+    const grouped = new Map<number, ApiRateConfigRoom[]>();
+    for (const room of rooms) {
+      grouped.set(room.floor, [...(grouped.get(room.floor) || []), room]);
+    }
+    return Array.from(grouped.entries())
+      .sort(([leftFloor], [rightFloor]) => leftFloor - rightFloor)
+      .map(([floor, floorRooms]) => ({
+        floor,
+        rooms: floorRooms.sort((leftRoom, rightRoom) => leftRoom.number.localeCompare(rightRoom.number, "es", { numeric: true }))
+      }));
+  }, [rooms]);
+
+  async function loadConfig() {
     onError(null);
     try {
-      const response = await api.rates(token);
-      setRatePlans(response.ratePlans);
-      setRooms(response.rooms);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.config });
     } catch (err) {
       onError(err);
-    } finally {
-      setLoading(false);
     }
   }
 
   useEffect(() => {
-    void loadRates();
-  }, [token]);
+    if (configQuery.error) onError(configQuery.error);
+  }, [configQuery.error, onError]);
 
-  useEffect(() => {
-    if (!selectedRate) return;
-    setRateForm({
-      name: selectedRate.name,
-      stayHours: selectedRate.stayHours,
-      priceSoles: selectedRate.priceCents / 100,
-      daysOfWeek: selectedRate.daysOfWeek,
-      active: selectedRate.active,
-      priority: selectedRate.priority,
-      roomIds: selectedRate.roomIds
-    });
-  }, [selectedRateId]);
-
-  useEffect(() => {
-    if (!selectedRoom) return;
-    setRoomForm({
-      number: selectedRoom.number,
-      floor: selectedRoom.floor,
-      type: selectedRoom.type,
-      shortLabel: selectedRoom.shortLabel,
-      baseRateSoles: selectedRoom.baseRateCents / 100,
-      status: selectedRoom.status
-    });
-  }, [selectedRoomId]);
-
-  function toggleDay(day: number) {
-    setRateForm((current) => {
+  function toggleDay(day: number, target: "dayGroup") {
+    if (target === "dayGroup") setDayGroupForm((current) => {
       const daysOfWeek = current.daysOfWeek.includes(day)
         ? current.daysOfWeek.filter((value) => value !== day)
         : [...current.daysOfWeek, day];
@@ -296,80 +358,151 @@ function RateSettingsView({ token, onError, onRoomsChanged }: { token: string; o
     });
   }
 
-  function toggleRoom(roomId: string) {
-    setRateForm((current) => {
-      const roomIds = current.roomIds.includes(roomId)
-        ? current.roomIds.filter((value) => value !== roomId)
-        : [...current.roomIds, roomId];
-      return { ...current, roomIds };
+  function openModal(kind: ConfigModalKind) {
+    if (kind === "room") setRoomRangeForm({ from: "", to: "" });
+    if (kind === "roomType") setRoomTypeForm({ name: "", description: "", features: [""] });
+    if (kind === "dayGroup") setDayGroupForm({ name: "", daysOfWeek: [1, 2, 3, 4, 5] });
+    if (kind === "hourPlan") setHourPlanForm({ name: "", hours: 1 });
+    if (kind === "rate") setRateForm({
+      name: "",
+      targetType: config.roomTypes[0] ? "type" : "room",
+      roomTypeId: config.roomTypes[0]?.id || "",
+      roomId: config.rooms[0]?.id || "",
+      dayGroupId: config.dayGroups[0]?.id || "",
+      hourPlanId: config.hourPlans[0]?.id || "",
+      priceSoles: 0,
+      priority: 10,
+      active: true
     });
+    if (kind === "overtime") setOvertimeForm({
+      name: "",
+      roomTypeId: "",
+      roomId: "",
+      dayGroupId: "",
+      hourPlanId: "",
+      graceMinutes: 5,
+      extraHourSoles: 0,
+      priority: 10,
+      active: true
+    });
+    setModal(kind);
   }
 
-  async function saveRate(event: FormEvent) {
+  async function submitModal(event: FormEvent) {
     event.preventDefault();
-    if (!rateForm.daysOfWeek.length) {
-      onError(new Error("Selecciona al menos un dia para la tarifa"));
-      return;
-    }
-
-    setSavingRate(true);
+    if (!modal) return;
+    setSaving(true);
     onError(null);
     try {
-      const input = {
-        name: rateForm.name,
-        stayHours: rateForm.stayHours,
-        priceCents: Math.round(rateForm.priceSoles * 100),
-        daysOfWeek: rateForm.daysOfWeek,
-        active: rateForm.active,
-        priority: rateForm.priority,
-        roomIds: rateForm.roomIds
-      };
-
-      if (selectedRateId) {
-        await api.updateRate(token, selectedRateId, input);
-      } else {
-        await api.createRate(token, input);
+      if (modal === "room") {
+        await api.createRoomRange(token, {
+          from: Number(roomRangeForm.from),
+          to: Number(roomRangeForm.to)
+        });
       }
-      await loadRates();
+      if (modal === "roomType") await api.createRoomType(token, {
+        name: roomTypeForm.name,
+        description: roomTypeForm.description,
+        features: roomTypeForm.features.map((feature) => feature.trim()).filter(Boolean),
+        active: true
+      });
+      if (modal === "dayGroup") await api.createDayGroup(token, { name: dayGroupForm.name, daysOfWeek: dayGroupForm.daysOfWeek, active: true });
+      if (modal === "hourPlan") await api.createHourPlan(token, { name: hourPlanForm.name, hours: hourPlanForm.hours, active: true });
+      if (modal === "rate") {
+        await api.createConfigRate(token, {
+          name: rateForm.name,
+          roomTypeId: rateForm.targetType === "type" ? rateForm.roomTypeId : "",
+          roomId: rateForm.targetType === "room" ? rateForm.roomId : "",
+          dayGroupId: rateForm.dayGroupId,
+          hourPlanId: rateForm.hourPlanId,
+          priceCents: Math.round(rateForm.priceSoles * 100),
+          active: rateForm.active,
+          priority: rateForm.priority
+        });
+      }
+      if (modal === "overtime") {
+        await api.createOvertimeRule(token, {
+          name: overtimeForm.name,
+          roomTypeId: overtimeForm.roomTypeId,
+          roomId: overtimeForm.roomId,
+          dayGroupId: overtimeForm.dayGroupId,
+          hourPlanId: overtimeForm.hourPlanId,
+          graceMinutes: overtimeForm.graceMinutes,
+          extraHourCents: Math.round(overtimeForm.extraHourSoles * 100),
+          active: overtimeForm.active,
+          priority: overtimeForm.priority
+        });
+      }
+      setModal(null);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.config });
       await onRoomsChanged();
     } catch (err) {
       onError(err);
     } finally {
-      setSavingRate(false);
+      setSaving(false);
     }
   }
 
-  async function saveRoom(event: FormEvent) {
-    event.preventDefault();
-    setSavingRoom(true);
+  async function deleteSelectedRooms() {
+    if (selectedRoomIds.length === 0) return;
+    setSaving(true);
     onError(null);
     try {
-      const input = {
-        number: roomForm.number,
-        floor: roomForm.floor,
-        type: roomForm.type,
-        shortLabel: roomForm.shortLabel,
-        baseRateCents: Math.round(roomForm.baseRateSoles * 100),
-        roomGroupId: "",
-        active: true,
-        notes: "",
-        status: roomForm.status
-      };
-
-      if (selectedRoomId) {
-        await api.updateRoom(token, selectedRoomId, input);
-      } else {
-        await api.createRoom(token, input);
-      }
-      setSelectedRoomId("");
-      setRoomForm({ number: "", floor: roomForm.floor, type: roomForm.type, shortLabel: roomForm.shortLabel, baseRateSoles: roomForm.baseRateSoles, status: "AVAILABLE" });
-      await loadRates();
+      await Promise.all(selectedRoomIds.map((roomId) => api.deleteRoom(token, roomId)));
+      setSelectedRoomIds([]);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.config });
       await onRoomsChanged();
     } catch (err) {
       onError(err);
     } finally {
-      setSavingRoom(false);
+      setSaving(false);
     }
+  }
+
+  function toggleSelectedRoom(roomId: string) {
+    setSelectedRoomIds((current) => current.includes(roomId)
+      ? current.filter((id) => id !== roomId)
+      : [...current, roomId]);
+  }
+
+  async function deleteSelectedRoomTypes() {
+    await deleteSelected(selectedRoomTypeIds, (id) => api.deleteRoomType(token, id), setSelectedRoomTypeIds);
+  }
+
+  async function deleteSelectedHourPlans() {
+    await deleteSelected(selectedHourPlanIds, (id) => api.deleteHourPlan(token, id), setSelectedHourPlanIds);
+  }
+
+  async function deleteSelectedDayGroups() {
+    await deleteSelected(selectedDayGroupIds, (id) => api.deleteDayGroup(token, id), setSelectedDayGroupIds);
+  }
+
+  async function deleteSelectedRates() {
+    await deleteSelected(selectedRateIds, (id) => api.deleteConfigRate(token, id), setSelectedRateIds);
+  }
+
+  async function deleteSelectedOvertimeRules() {
+    await deleteSelected(selectedOvertimeRuleIds, (id) => api.deleteOvertimeRule(token, id), setSelectedOvertimeRuleIds);
+  }
+
+  async function deleteSelected(ids: string[], remove: (id: string) => Promise<unknown>, clear: (ids: string[]) => void) {
+    if (ids.length === 0) return;
+    setSaving(true);
+    onError(null);
+    try {
+      await Promise.all(ids.map(remove));
+      clear([]);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.config });
+      await onRoomsChanged();
+    } catch (err) {
+      onError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function toggleSelected(id: string, setter: (updater: (current: string[]) => string[]) => void) {
+    setter((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   }
 
   return (
@@ -377,9 +510,9 @@ function RateSettingsView({ token, onError, onRoomsChanged }: { token: string; o
       <header className="ledger-head">
         <div>
           <h1>Configuracion hotelera</h1>
-          <p>Tarifas por horas, asignacion por habitaciones y control de disponibilidad.</p>
+          <p>Capas configurables para habitaciones, tipos, dias, horas, tarifas y sobretiempo.</p>
         </div>
-        <button type="button" onClick={loadRates} disabled={loading}>{loading ? "Cargando..." : "Actualizar"}</button>
+        <button type="button" onClick={loadConfig} disabled={loading}>{loading ? "Cargando..." : "Actualizar"}</button>
       </header>
 
       <div className="settings-summary">
@@ -390,114 +523,297 @@ function RateSettingsView({ token, onError, onRoomsChanged }: { token: string; o
         <span><strong>{statusCounts.DISABLED}</strong> Inhabilitado</span>
       </div>
 
-      <div className="settings-layout">
-        <form className="settings-panel" onSubmit={saveRate}>
-          <div className="settings-panel-head">
-            <div>
-              <h2>Tarifas por grupo de horas</h2>
-              <p>Crea cualquier grupo de horas y asignalo a las habitaciones que correspondan.</p>
-            </div>
-            <button type="button" onClick={() => {
-              setSelectedRateId("");
-              setRateForm({ name: "Nueva tarifa", stayHours: 1, priceSoles: 0, daysOfWeek: [0, 1, 2, 3, 4, 5, 6], active: true, priority: 10, roomIds: [] });
-            }}>Nueva</button>
+      <div className="config-board">
+        <ConfigSection
+          title="Habitaciones"
+          primaryAction="Nuevo rango de habitaciones"
+          secondaryAction={selectedRoomIds.length ? `Eliminar ${selectedRoomIds.length}` : "Eliminar habitaciones"}
+          onPrimary={() => openModal("room")}
+          onSecondary={deleteSelectedRooms}
+          secondaryDisabled={selectedRoomIds.length === 0 || saving}
+        >
+          <div className="config-floor-stack">
+            {roomsByFloor.map(({ floor, rooms: floorRooms }) => (
+              <div className="config-floor-row" key={floor}>
+                <strong>{floor}00</strong>
+                <div className="config-room-strip">
+                  {floorRooms.map((room) => (
+                    <button
+                      className={`config-room-chip ${room.status.toLowerCase()} ${selectedRoomIds.includes(room.id) ? "selected" : ""}`}
+                      key={room.id}
+                      type="button"
+                      onClick={() => toggleSelectedRoom(room.id)}
+                    >
+                      {room.number}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
+        </ConfigSection>
 
-          <div className="rate-list">
-            {ratePlans.map((ratePlan) => (
-              <button className={selectedRateId === ratePlan.id ? "selected" : ""} key={ratePlan.id} type="button" onClick={() => setSelectedRateId(ratePlan.id)}>
-                <strong>{ratePlan.name}</strong>
-                <span>{ratePlan.stayHours} h - {soles(ratePlan.priceCents)} - {ratePlan.roomIds.length} hab.</span>
+        <ConfigSection
+          title="Tipos de habitaciones"
+          primaryAction="Nuevo tipo de habitaciones"
+          secondaryAction={selectedRoomTypeIds.length ? `Eliminar ${selectedRoomTypeIds.length}` : "Eliminar tipos"}
+          onPrimary={() => openModal("roomType")}
+          onSecondary={deleteSelectedRoomTypes}
+          secondaryDisabled={selectedRoomTypeIds.length === 0 || saving}
+        >
+          <div className="config-group-grid">
+            {config.roomTypes.map((type) => (
+              <button
+                className={`config-group-card ${selectedRoomTypeIds.includes(type.id) ? "selected" : ""}`}
+                key={type.id}
+                type="button"
+                onClick={() => toggleSelected(type.id, setSelectedRoomTypeIds)}
+              >
+                <strong>{type.name}</strong>
+                <small>{type.description || "Sin descripcion"}</small>
+                <div>{type.features.map((feature) => <span key={feature}>{feature}</span>)}</div>
+                <div>{(roomsByType.get(type.id) || []).map((room) => <span key={room.id}>{room.number}</span>)}</div>
+              </button>
+            ))}
+            {(roomsByType.get("untyped") || []).length > 0 && (
+              <div className="config-group-card passive">
+                <strong>Sin tipo</strong>
+                <div>{(roomsByType.get("untyped") || []).map((room) => <span key={room.id}>{room.number}</span>)}</div>
+              </div>
+            )}
+          </div>
+        </ConfigSection>
+
+        <ConfigSection
+          title="Grupo de horas"
+          primaryAction="Nuevo grupo de horas"
+          secondaryAction={selectedHourPlanIds.length ? `Eliminar ${selectedHourPlanIds.length}` : "Eliminar horas"}
+          onPrimary={() => openModal("hourPlan")}
+          onSecondary={deleteSelectedHourPlans}
+          secondaryDisabled={selectedHourPlanIds.length === 0 || saving}
+        >
+          <div className="config-token-grid">
+            {config.hourPlans.map((plan) => (
+              <button className={selectedHourPlanIds.includes(plan.id) ? "selected" : ""} key={plan.id} type="button" onClick={() => toggleSelected(plan.id, setSelectedHourPlanIds)}>
+                <strong>{plan.name}</strong><span>{plan.hours} h</span>
               </button>
             ))}
           </div>
+        </ConfigSection>
 
-          <div className="form-grid settings-form">
-            <label>Nombre<input value={rateForm.name} onChange={(event) => setRateForm({ ...rateForm, name: event.target.value })} /></label>
-            <label>Horas<input type="number" min={1} value={rateForm.stayHours} onChange={(event) => setRateForm({ ...rateForm, stayHours: Number(event.target.value) })} /></label>
-            <label>Precio S/<input type="number" min={0} step="0.5" value={rateForm.priceSoles} onChange={(event) => setRateForm({ ...rateForm, priceSoles: Number(event.target.value) })} /></label>
-            <label>Prioridad<input type="number" min={0} value={rateForm.priority} onChange={(event) => setRateForm({ ...rateForm, priority: Number(event.target.value) })} /></label>
-            <label>Estado<select value={rateForm.active ? "ACTIVE" : "INACTIVE"} onChange={(event) => setRateForm({ ...rateForm, active: event.target.value === "ACTIVE" })}>
-              <option value="ACTIVE">Activa</option>
-              <option value="INACTIVE">Inactiva</option>
-            </select></label>
-          </div>
-
-          <div className="segmented-row" aria-label="Dias activos">
-            {dayOptions.map((day) => (
-              <button className={rateForm.daysOfWeek.includes(day.value) ? "active" : ""} key={day.value} type="button" onClick={() => toggleDay(day.value)}>{day.label}</button>
+        <ConfigSection
+          title="Grupos de dias"
+          primaryAction="Nuevo grupo de dias"
+          secondaryAction={selectedDayGroupIds.length ? `Eliminar ${selectedDayGroupIds.length}` : "Eliminar grupo de dias"}
+          onPrimary={() => openModal("dayGroup")}
+          onSecondary={deleteSelectedDayGroups}
+          secondaryDisabled={selectedDayGroupIds.length === 0 || saving}
+        >
+          <div className="config-token-grid">
+            {config.dayGroups.map((group) => (
+              <button className={selectedDayGroupIds.includes(group.id) ? "selected" : ""} key={group.id} type="button" onClick={() => toggleSelected(group.id, setSelectedDayGroupIds)}>
+                <strong>{group.name}</strong><span>{dayText(group.daysOfWeek)}</span>
+              </button>
             ))}
           </div>
+        </ConfigSection>
 
-          <div className="room-assignment">
-            {rooms.map((room) => (
-              <label className={rateForm.roomIds.includes(room.id) ? "checked" : ""} key={room.id}>
-                <input type="checkbox" checked={rateForm.roomIds.includes(room.id)} onChange={() => toggleRoom(room.id)} />
-                <span>{room.number}</span>
-                <small>{room.type} - base {soles(room.baseRateCents)}</small>
-              </label>
+        <ConfigSection title="Cajeras" primaryAction="Nueva/o cajera/o" secondaryAction="Eliminar cajera/o">
+          <div className="config-token-grid" />
+        </ConfigSection>
+
+        <ConfigSection
+          title="Tarifas"
+          primaryAction="Nueva tarifa"
+          secondaryAction={selectedRateIds.length ? `Eliminar ${selectedRateIds.length}` : "Eliminar tarifa"}
+          onPrimary={() => openModal("rate")}
+          onSecondary={deleteSelectedRates}
+          secondaryDisabled={selectedRateIds.length === 0 || saving}
+        >
+          <div className="config-rate-grid">
+            {config.rates.map((rate) => (
+              <RateCard
+                key={rate.id}
+                rate={rate}
+                config={config}
+                selected={selectedRateIds.includes(rate.id)}
+                onClick={() => toggleSelected(rate.id, setSelectedRateIds)}
+              />
             ))}
           </div>
+        </ConfigSection>
 
-          <button className="primary-button" type="submit" disabled={savingRate}>{savingRate ? "Guardando..." : "Guardar tarifa"}</button>
-        </form>
+        <ConfigSection title="Personal de limpieza" primaryAction="Nueva/o personal" secondaryAction="Eliminar personal">
+          <div className="config-token-grid" />
+        </ConfigSection>
 
-        <form className="settings-panel" onSubmit={saveRoom}>
-          <div className="settings-panel-head">
-            <div>
-              <h2>Habitaciones</h2>
-              <p>Alta, edicion, tarifa base y estado operativo.</p>
-            </div>
-            <button type="button" onClick={() => {
-              setSelectedRoomId("");
-              setRoomForm({ number: "", floor: 2, type: "Matrimonial", shortLabel: "M", baseRateSoles: 50, status: "AVAILABLE" });
-            }}>Nueva</button>
+        <ConfigSection
+          title="Reglas de sobretiempo"
+          primaryAction="Nueva regla"
+          secondaryAction={selectedOvertimeRuleIds.length ? `Eliminar ${selectedOvertimeRuleIds.length}` : "Eliminar regla"}
+          onPrimary={() => openModal("overtime")}
+          onSecondary={deleteSelectedOvertimeRules}
+          secondaryDisabled={selectedOvertimeRuleIds.length === 0 || saving}
+        >
+          <div className="config-token-grid">
+            {config.overtimeRules.map((rule) => (
+              <button className={selectedOvertimeRuleIds.includes(rule.id) ? "selected" : ""} key={rule.id} type="button" onClick={() => toggleSelected(rule.id, setSelectedOvertimeRuleIds)}>
+                <strong>{rule.name}</strong><span>{rule.graceMinutes} min - {soles(rule.extraHourCents)}</span>
+              </button>
+            ))}
           </div>
-
-          <div className="form-grid settings-form">
-            <label>Seleccionar<select value={selectedRoomId} onChange={(event) => setSelectedRoomId(event.target.value)}>
-              <option value="">Nueva habitacion</option>
-              {rooms.map((room) => <option key={room.id} value={room.id}>{room.number} - {room.type}</option>)}
-            </select></label>
-            <label>Nro<input value={roomForm.number} onChange={(event) => setRoomForm({ ...roomForm, number: event.target.value })} /></label>
-            <label>Piso<input type="number" min={0} value={roomForm.floor} onChange={(event) => setRoomForm({ ...roomForm, floor: Number(event.target.value) })} /></label>
-            <label>Tipo<input value={roomForm.type} onChange={(event) => setRoomForm({ ...roomForm, type: event.target.value })} /></label>
-            <label>Etiqueta<input value={roomForm.shortLabel} onChange={(event) => setRoomForm({ ...roomForm, shortLabel: event.target.value })} /></label>
-            <label>Tarifa base S/<input type="number" min={0} step="0.5" value={roomForm.baseRateSoles} onChange={(event) => setRoomForm({ ...roomForm, baseRateSoles: Number(event.target.value) })} /></label>
-            <label>Estado<select value={roomForm.status} onChange={(event) => setRoomForm({ ...roomForm, status: event.target.value as RoomStatus })}>
-              <option value="AVAILABLE">Disponible</option>
-              <option value="CLEANING">Limpieza</option>
-              <option value="DISABLED">Inhabilitado</option>
-              <option value="OCCUPIED">Ocupada</option>
-            </select></label>
-          </div>
-
-          <button className="primary-button" type="submit" disabled={savingRoom}>{savingRoom ? "Guardando..." : "Guardar habitacion"}</button>
-        </form>
+        </ConfigSection>
       </div>
+
+      {modal && (
+        <div className="modal-backdrop" onMouseDown={() => setModal(null)}>
+          <form className="config-modal" onSubmit={submitModal} onMouseDown={(event) => event.stopPropagation()}>
+            <header className="modal-head">
+              <h1>{modal === "room" ? "Nuevo rango de habitaciones" : modal === "roomType" ? "Nuevo tipo de habitaciones" : modal === "dayGroup" ? "Nuevo grupo de dias" : modal === "hourPlan" ? "Nuevo grupo de horas" : modal === "rate" ? "Nueva tarifa" : "Nueva regla de sobretiempo"}</h1>
+              <button className="icon-button light" type="button" onClick={() => setModal(null)} title="Close"><X size={18} /></button>
+            </header>
+            <div className="config-modal-body">
+              {modal === "room" && (
+                <div className="form-grid two">
+                  <label>Desde<input type="number" min={1} value={roomRangeForm.from} onChange={(event) => setRoomRangeForm({ ...roomRangeForm, from: event.target.value })} /></label>
+                  <label>Hasta<input type="number" min={1} value={roomRangeForm.to} onChange={(event) => setRoomRangeForm({ ...roomRangeForm, to: event.target.value })} /></label>
+                </div>
+              )}
+              {modal === "roomType" && (
+                <div className="form-grid">
+                  <label>Nombre<input value={roomTypeForm.name} onChange={(event) => setRoomTypeForm({ ...roomTypeForm, name: event.target.value })} /></label>
+                  <label>Descripcion<textarea value={roomTypeForm.description} onChange={(event) => setRoomTypeForm({ ...roomTypeForm, description: event.target.value })} /></label>
+                  <div className="feature-editor">
+                    <div className="feature-editor-head">
+                      <strong>Caracteristicas</strong>
+                      <button type="button" onClick={() => setRoomTypeForm((current) => ({ ...current, features: [...current.features, ""] }))}>+</button>
+                    </div>
+                    {roomTypeForm.features.map((feature, index) => (
+                      <div className="feature-row" key={index}>
+                        <input
+                          value={feature}
+                          placeholder="Sauna, TV, Netflix..."
+                          onChange={(event) => setRoomTypeForm((current) => ({
+                            ...current,
+                            features: current.features.map((item, itemIndex) => itemIndex === index ? event.target.value : item)
+                          }))}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setRoomTypeForm((current) => ({
+                            ...current,
+                            features: current.features.length === 1 ? [""] : current.features.filter((_, itemIndex) => itemIndex !== index)
+                          }))}
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {modal === "dayGroup" && <div className="form-grid"><label>Nombre<input value={dayGroupForm.name} onChange={(event) => setDayGroupForm({ ...dayGroupForm, name: event.target.value })} /></label><div className="segmented-row">{dayOptions.map((day) => <button className={dayGroupForm.daysOfWeek.includes(day.value) ? "active" : ""} key={day.value} type="button" onClick={() => toggleDay(day.value, "dayGroup")}>{day.label}</button>)}</div></div>}
+              {modal === "hourPlan" && <div className="form-grid two"><label>Nombre<input value={hourPlanForm.name} onChange={(event) => setHourPlanForm({ ...hourPlanForm, name: event.target.value })} /></label><label>Horas<input type="number" min={1} value={hourPlanForm.hours} onChange={(event) => setHourPlanForm({ ...hourPlanForm, hours: Number(event.target.value) })} /></label></div>}
+              {modal === "rate" && (
+                <div className="form-grid two">
+                  <label>Nombre<input value={rateForm.name} onChange={(event) => setRateForm({ ...rateForm, name: event.target.value })} /></label>
+                  <label>Aplicar a<select value={rateForm.targetType} onChange={(event) => setRateForm({ ...rateForm, targetType: event.target.value as "type" | "room" })}><option value="type">Tipo de habitacion</option><option value="room">Habitacion individual</option></select></label>
+                  {rateForm.targetType === "type" ? <label>Tipo<select value={rateForm.roomTypeId} onChange={(event) => setRateForm({ ...rateForm, roomTypeId: event.target.value })}>{config.roomTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label> : <label>Habitacion<select value={rateForm.roomId} onChange={(event) => setRateForm({ ...rateForm, roomId: event.target.value })}>{rooms.map((room) => <option key={room.id} value={room.id}>{room.number}</option>)}</select></label>}
+                  <label>Dias<select value={rateForm.dayGroupId} onChange={(event) => setRateForm({ ...rateForm, dayGroupId: event.target.value })}>{config.dayGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+                  <label>Horas<select value={rateForm.hourPlanId} onChange={(event) => setRateForm({ ...rateForm, hourPlanId: event.target.value })}>{config.hourPlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></label>
+                  <label>Precio S/<input type="number" min={0} step="0.5" value={rateForm.priceSoles} onChange={(event) => setRateForm({ ...rateForm, priceSoles: Number(event.target.value) })} /></label>
+                  <label>Prioridad<input type="number" min={0} value={rateForm.priority} onChange={(event) => setRateForm({ ...rateForm, priority: Number(event.target.value) })} /></label>
+                </div>
+              )}
+              {modal === "overtime" && (
+                <div className="form-grid two">
+                  <label>Nombre<input value={overtimeForm.name} onChange={(event) => setOvertimeForm({ ...overtimeForm, name: event.target.value })} /></label>
+                  <label>Minutos de gracia<input type="number" min={0} value={overtimeForm.graceMinutes} onChange={(event) => setOvertimeForm({ ...overtimeForm, graceMinutes: Number(event.target.value) })} /></label>
+                  <label>Hora extra S/<input type="number" min={0} step="0.5" value={overtimeForm.extraHourSoles} onChange={(event) => setOvertimeForm({ ...overtimeForm, extraHourSoles: Number(event.target.value) })} /></label>
+                  <label>Tipo<select value={overtimeForm.roomTypeId} onChange={(event) => setOvertimeForm({ ...overtimeForm, roomTypeId: event.target.value })}><option value="">Todos</option>{config.roomTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label>
+                  <label>Dias<select value={overtimeForm.dayGroupId} onChange={(event) => setOvertimeForm({ ...overtimeForm, dayGroupId: event.target.value })}><option value="">Todos</option>{config.dayGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+                  <label>Horas<select value={overtimeForm.hourPlanId} onChange={(event) => setOvertimeForm({ ...overtimeForm, hourPlanId: event.target.value })}><option value="">Todos</option>{config.hourPlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></label>
+                </div>
+              )}
+            </div>
+            <div className="button-row">
+              <button type="button" onClick={() => setModal(null)}>Cancelar</button>
+              <button className="primary-button" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar"}</button>
+            </div>
+          </form>
+        </div>
+      )}
     </section>
   );
 }
 
+function ConfigSection({
+  title,
+  primaryAction,
+  secondaryAction,
+  onPrimary,
+  onSecondary,
+  secondaryDisabled,
+  children
+}: {
+  title: string;
+  primaryAction: string;
+  secondaryAction: string;
+  onPrimary?: () => void;
+  onSecondary?: () => void;
+  secondaryDisabled?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <section className="config-section">
+      <header>
+        <h2>{title}</h2>
+        <div>
+          <button type="button" disabled={!onSecondary || secondaryDisabled} onClick={onSecondary}>{secondaryAction}</button>
+          <button type="button" onClick={onPrimary}>{primaryAction}</button>
+        </div>
+      </header>
+      <div className="config-section-body">{children}</div>
+      <footer />
+    </section>
+  );
+}
+
+function RateCard({ rate, config, selected, onClick }: { rate: ApiRate; config: ConfigState; selected?: boolean; onClick?: () => void }) {
+  const room = config.rooms.find((item) => item.id === rate.roomId);
+  const type = config.roomTypes.find((item) => item.id === rate.roomTypeId);
+  const dayGroup = config.dayGroups.find((item) => item.id === rate.dayGroupId);
+  const hourPlan = config.hourPlans.find((item) => item.id === rate.hourPlanId);
+  return (
+    <button className={selected ? "selected" : ""} type="button" onClick={onClick}>
+      <strong>{soles(rate.priceCents)}</strong>
+      <span>{room?.number || type?.name || "Sin tipo"}</span>
+      <small>{hourPlan?.name || "-"} / {dayGroup?.name || "-"}</small>
+    </button>
+  );
+}
+
 function ShiftLedgerView({ token, onError }: { token: string; onError: (error: unknown) => void }) {
-  const [ledger, setLedger] = useState<ShiftLedger | null>(null);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const ledgerQuery = useQuery({
+    queryKey: queryKeys.shiftLedger,
+    queryFn: () => api.shiftLedger(token)
+  });
+  const ledger = ledgerQuery.data ?? null;
+  const loading = ledgerQuery.isFetching;
 
   async function loadLedger() {
-    setLoading(true);
     onError(null);
     try {
-      setLedger(await api.shiftLedger(token));
+      await queryClient.invalidateQueries({ queryKey: queryKeys.shiftLedger });
     } catch (err) {
       onError(err);
-    } finally {
-      setLoading(false);
     }
   }
 
   useEffect(() => {
-    void loadLedger();
-  }, [token]);
+    if (ledgerQuery.error) onError(ledgerQuery.error);
+  }, [ledgerQuery.error, onError]);
 
   return (
     <section className="ledger-view" aria-busy={loading}>
@@ -648,7 +964,6 @@ function RoomModal({
   const [companionOccupation, setCompanionOccupation] = useState("");
   const [stayHours, setStayHours] = useState(5);
   const [rateCents, setRateCents] = useState(5900);
-  const [availableRates, setAvailableRates] = useState<ApiAvailableRate[]>([]);
   const [selectedRateId, setSelectedRateId] = useState("");
   const [rateFilter, setRateFilter] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
@@ -660,11 +975,16 @@ function RoomModal({
   const [waiverReason, setWaiverReason] = useState("");
   const [showWaiver, setShowWaiver] = useState(false);
   const [busy, setBusy] = useState(false);
+  const availableRatesQuery = useQuery({
+    queryKey: queryKeys.availableRates(room.id),
+    queryFn: () => api.availableRates(token, room.id),
+    enabled: !room.activeStay
+  });
+  const availableRates = availableRatesQuery.data?.rates ?? [];
 
   useEffect(() => {
     setRateCents(room.baseRateCents);
     setStayHours(room.activeStay?.stayHours || 5);
-    setAvailableRates([]);
     setSelectedRateId("");
     setRateFilter("");
     setNotes(room.activeStay?.notes || "");
@@ -686,19 +1006,17 @@ function RoomModal({
   }, [room.id, products]);
 
   useEffect(() => {
-    if (room.activeStay) return;
-    void api.availableRates(token, room.id)
-      .then((response) => {
-        setAvailableRates(response.rates);
-        const firstRate = response.rates[0];
-        if (firstRate) {
-          setSelectedRateId(firstRate.id);
-          setStayHours(firstRate.hours);
-          setRateCents(firstRate.priceCents);
-        }
-      })
-      .catch(onError);
-  }, [room.id, room.activeStay, token, onError]);
+    if (availableRatesQuery.error) onError(availableRatesQuery.error);
+  }, [availableRatesQuery.error, onError]);
+
+  useEffect(() => {
+    if (room.activeStay || selectedRateId) return;
+    const firstRate = availableRates[0];
+    if (!firstRate) return;
+    setSelectedRateId(firstRate.id);
+    setStayHours(firstRate.hours);
+    setRateCents(firstRate.priceCents);
+  }, [availableRates, room.activeStay, selectedRateId]);
 
   useEffect(() => {
     const rate = availableRates.find((item) => item.id === selectedRateId);

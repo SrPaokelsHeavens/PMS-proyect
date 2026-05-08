@@ -10,9 +10,12 @@
   "scripts": {
     "dev": "npm --workspace packages/shared run build && concurrently \"npm --workspace apps/api run dev\" \"npm --workspace apps/web run dev\"",
     "build": "npm --workspace packages/shared run build && npm --workspace apps/api run build && npm --workspace apps/web run build",
+    "test": "npm --workspace packages/shared run build && npm --workspace apps/api run test",
     "typecheck": "npm --workspace packages/shared run build && npm --workspace apps/api run typecheck && npm --workspace apps/web run typecheck",
     "db:generate": "npm --workspace apps/api run db:generate",
     "db:migrate": "npm --workspace apps/api run db:migrate",
+    "db:deploy": "npm --workspace apps/api run db:deploy",
+    "db:clear-demo": "npm --workspace apps/api run db:clear-demo",
     "db:seed": "npm --workspace apps/api run db:seed"
   },
   "devDependencies": {

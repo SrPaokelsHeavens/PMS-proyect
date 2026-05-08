@@ -1,0 +1,18 @@
+sequenceDiagram
+    participant C as Cliente (Web)
+    participant A as API (Fastify)
+    participant S as StayService
+    participant R as RateEngine
+    participant DB as Base de Datos (Prisma)
+
+    C->>A: POST /api/stays/check-in
+    A->>S: checkIn(data)
+    S->>R: selectRateForRoom()
+    R-->>S: Tarifa aplicada
+    S->>DB: Iniciar Transacción
+    DB->>DB: Crear Registro Stay
+    DB->>DB: Crear Cargo Inicial
+    DB->>DB: Actualizar Habitación a OCCUPIED
+    S->>DB: Commit Transacción
+    S->>A: Evento Realtime (Socket.io)
+    A-->>C: 201 Created (Check-in exitoso)

@@ -4,12 +4,17 @@
   background: #eef2f4;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  min-width: 0;
 }
 
 button,
@@ -52,10 +57,12 @@ button {
 }
 
 .nav-tabs {
+  min-width: 0;
   display: flex;
   gap: 2px;
   overflow-x: auto;
   flex: 1;
+  scrollbar-width: thin;
 }
 
 .nav-tabs button {
@@ -141,7 +148,7 @@ button {
 
 .ledger-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -163,7 +170,7 @@ button {
 
 .settings-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -185,7 +192,7 @@ button {
 
 .settings-layout {
   display: grid;
-  grid-template-columns: minmax(560px, 1.45fr) minmax(330px, .85fr);
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, .85fr);
   gap: 12px;
   align-items: start;
 }
@@ -317,6 +324,252 @@ button {
   font-size: 11px;
 }
 
+.config-board {
+  height: min(640px, calc(100vh - 250px));
+  min-height: 500px;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(720px, 1fr));
+  align-content: start;
+  gap: 24px 28px;
+  border: 1px solid #98a2b3;
+  background: #f8fafc;
+  padding: 18px;
+  scrollbar-color: #7a7a7a #ffffff;
+  scrollbar-width: auto;
+}
+
+.config-section {
+  min-width: 0;
+  height: 156px;
+  display: grid;
+  grid-template-rows: 39px 1fr 20px;
+  border: 1px solid #475467;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.config-section header {
+  display: grid;
+  grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
+  border-bottom: 1px solid #475467;
+}
+
+.config-section h2 {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  border-right: 1px solid #475467;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.config-section header div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(128px, 190px) minmax(128px, 190px);
+}
+
+.config-section header div::before {
+  content: "";
+}
+
+.config-section header button {
+  border: 0;
+  border-left: 1px solid #475467;
+  background: #ffffff;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.config-section header button:disabled {
+  opacity: 1;
+  color: #667085;
+  background: #f8fafc;
+}
+
+.config-section-body {
+  min-height: 84px;
+  overflow: auto;
+  padding: 10px 18px;
+  scrollbar-color: #7a7a7a #ffffff;
+  scrollbar-width: thin;
+}
+
+.config-section footer {
+  border-top: 1px solid #475467;
+  background: linear-gradient(90deg, #7a7a7a 0 96px, #ffffff 96px);
+}
+
+.config-room-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  min-width: max-content;
+}
+
+.config-floor-stack {
+  display: grid;
+  gap: 8px;
+  min-width: max-content;
+}
+
+.config-floor-row {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.config-floor-row > strong {
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #667085;
+  background: #f8fafc;
+  color: #344054;
+  font-size: 12px;
+}
+
+.config-room-chip {
+  width: 88px;
+  height: 34px;
+  border: 1px solid #667085;
+  background: #ffffff;
+  color: #101828;
+  font-weight: 800;
+}
+
+.config-room-chip.available {
+  border-bottom: 4px solid #083b78;
+}
+
+.config-room-chip.occupied {
+  border-bottom: 4px solid #c77700;
+}
+
+.config-room-chip.cleaning {
+  border-bottom: 4px solid #667085;
+}
+
+.config-room-chip.disabled {
+  border-bottom: 4px solid #a32121;
+}
+
+.config-room-chip.selected {
+  background: #dbeafe;
+  box-shadow: inset 0 0 0 2px #075985;
+}
+
+.config-group-grid,
+.config-token-grid,
+.config-rate-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  min-width: max-content;
+}
+
+.config-group-card,
+.config-token-grid button,
+.config-rate-grid button {
+  min-width: 88px;
+  min-height: 58px;
+  display: block;
+  border: 1px solid #667085;
+  background: #ffffff;
+  color: #344054;
+  padding: 0;
+  text-align: center;
+}
+
+.config-group-card strong,
+.config-token-grid strong,
+.config-rate-grid strong {
+  min-height: 29px;
+  display: grid;
+  place-items: center;
+  border-bottom: 1px solid #667085;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.config-group-card div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px;
+}
+
+.config-group-card span {
+  min-width: 35px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.config-group-card.muted {
+  background: #f8fafc;
+}
+
+.config-group-card.selected,
+.config-token-grid button.selected,
+.config-rate-grid button.selected {
+  background: #dbeafe;
+  box-shadow: inset 0 0 0 2px #075985;
+}
+
+.config-token-grid span,
+.config-rate-grid span,
+.config-rate-grid small {
+  display: block;
+  padding: 5px 8px;
+  color: #475467;
+  font-size: 12px;
+}
+
+.config-token-grid.placeholder button {
+  color: #667085;
+}
+
+.config-template-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 8px 0;
+}
+
+.config-template-row button {
+  min-width: 180px;
+  min-height: 58px;
+  border: 1px solid #475467;
+  background: #ffffff;
+  color: #344054;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.config-template-row button.active {
+  background: #99f6e4;
+}
+
+.config-modal {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border: 1px solid #cfd8e3;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgba(15,23,42,.32);
+}
+
+.config-modal-body {
+  padding: 14px;
+}
+
 .ledger-table-wrap {
   overflow: auto;
   border: 1px solid #d7dee7;
@@ -352,13 +605,53 @@ button {
   background: #f7fdff;
 }
 
+.floor-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.floor-section {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+}
+
+.floor-label {
+  min-height: 145px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 4px;
+  border: 1px solid #c9d3df;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #344054;
+  text-align: center;
+}
+
+.floor-label strong {
+  font-size: 15px;
+  text-transform: uppercase;
+}
+
+.floor-label span {
+  color: #667085;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .room-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(124px, 1fr));
-  grid-auto-rows: minmax(152px, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  grid-auto-rows: minmax(145px, auto);
   gap: 8px;
-  min-width: 940px;
-  min-height: calc(100vh - 78px);
+  min-width: 0;
+  min-height: auto;
+}
+
+.floor-room-grid {
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
 }
 
 .room-card {
@@ -759,9 +1052,25 @@ button:disabled {
 }
 
 @media (max-width: 980px) {
+  .floor-section {
+    grid-template-columns: 58px minmax(0, 1fr);
+  }
+
+  .floor-label {
+    min-height: 132px;
+  }
+
+  .floor-label strong {
+    font-size: 13px;
+  }
+
   .room-grid {
-    min-width: 760px;
-    grid-template-columns: repeat(7, minmax(96px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+    grid-auto-rows: minmax(132px, auto);
+  }
+
+  .floor-room-grid {
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
   }
 
   .room-number {
@@ -776,26 +1085,213 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
-  .settings-layout,
-  .settings-summary {
+  .settings-layout {
     grid-template-columns: 1fr;
   }
 
   .settings-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .config-board {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 760px) {
   .nav {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
     height: auto;
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: center;
+    gap: 8px;
     padding: 8px;
+  }
+
+  .brand {
+    min-width: 0;
+  }
+
+  .brand span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .nav-tabs {
+    grid-column: 1 / -1;
+    width: 100%;
+    order: 4;
+  }
+
+  .nav-tabs button {
+    height: 38px;
+    padding: 0 10px;
+  }
+
+  .icon-button {
+    width: 34px;
+    height: 34px;
   }
 
   .card-dashboard {
     min-height: auto;
+    padding: 8px;
+  }
+
+  .module-shell,
+  .ledger-view,
+  .settings-view {
+    min-height: calc(100vh - 104px);
+    padding: 10px;
+  }
+
+  .ledger-head,
+  .settings-panel-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ledger-head button,
+  .settings-panel-head button {
+    width: 100%;
+  }
+
+  .settings-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-panel {
+    padding: 10px;
+  }
+
+  .floor-stack {
+    gap: 12px;
+  }
+
+  .floor-section {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .floor-label {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 10px;
+  }
+
+  .room-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: minmax(126px, auto);
+    gap: 7px;
+  }
+
+  .floor-room-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .room-card {
+    min-height: 126px;
+  }
+
+  .room-number {
+    font-size: 38px;
+  }
+
+  .room-type {
+    top: 38px;
+    font-size: 32px;
+  }
+
+  .guest-name {
+    top: 76px;
+    font-size: 10px;
+  }
+
+  .room-footer {
+    font-size: 10px;
+  }
+
+  .room-footer small {
+    min-width: 44px;
+  }
+
+  .time-track {
+    left: 8px;
+    right: 8px;
+    bottom: 28px;
+  }
+
+  .config-board {
+    min-height: 0;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    border: 0;
+    background: transparent;
+    padding: 0;
+  }
+
+  .config-section {
+    grid-template-rows: auto 1fr 16px;
+  }
+
+  .config-section header {
+    grid-template-columns: 1fr;
+  }
+
+  .config-section h2 {
+    min-height: 36px;
+    justify-content: start;
+    place-items: center start;
+    border-right: 0;
+    border-bottom: 1px solid #475467;
+    padding: 0 10px;
+  }
+
+  .config-section header div {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .config-section header div::before {
+    display: none;
+  }
+
+  .config-section header button {
+    min-height: 38px;
+    border-left: 0;
+  }
+
+  .config-section header button + button {
+    border-left: 1px solid #475467;
+  }
+
+  .config-section-body {
+    max-height: 230px;
+    padding: 10px;
+  }
+
+  .config-room-strip,
+  .config-group-grid,
+  .config-token-grid,
+  .config-rate-grid {
+    gap: 8px;
+  }
+
+  .config-room-chip,
+  .config-group-card,
+  .config-token-grid button,
+  .config-rate-grid button {
+    min-width: 78px;
+  }
+
+  .config-template-row {
+    gap: 8px;
+  }
+
+  .config-template-row button {
+    flex: 1 1 150px;
+    min-width: 0;
   }
 
   .form-grid.two {
@@ -809,5 +1305,73 @@ button:disabled {
   .modal-backdrop {
     align-items: start;
     padding: 10px;
+  }
+
+  .room-modal,
+  .config-modal {
+    width: 100%;
+    max-height: calc(100vh - 20px);
+    border-radius: 7px;
+  }
+
+  .modal-head {
+    min-height: 56px;
+    align-items: start;
+    padding: 10px;
+  }
+
+  .modal-head-actions {
+    flex-wrap: wrap;
+    justify-content: end;
+  }
+
+  .modal-content,
+  .config-modal-body {
+    padding: 10px;
+  }
+
+  .button-row button,
+  .charge-box button,
+  .primary-button {
+    flex: 1 1 140px;
+  }
+
+  .account {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .toast {
+    left: 10px;
+    right: 10px;
+    max-width: none;
+  }
+
+  .login-shell {
+    place-items: start center;
+    padding: 18px 10px;
+  }
+
+  .login-panel {
+    margin-top: 10vh;
+    padding: 18px;
+  }
+}
+
+@media (max-width: 390px) {
+  .room-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .room-number {
+    font-size: 34px;
+  }
+
+  .room-type {
+    font-size: 28px;
+  }
+
+  .settings-summary {
+    grid-template-columns: 1fr;
   }
 }

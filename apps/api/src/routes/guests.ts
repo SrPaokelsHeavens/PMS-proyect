@@ -15,7 +15,7 @@ export async function guestRoutes(app: FastifyInstance) {
       include: {
         stays: {
           include: {
-            room: true,
+            room: { include: { roomType: true } },
             charges: {
               include: { product: true }
             }
@@ -36,7 +36,7 @@ export async function guestRoutes(app: FastifyInstance) {
       const roomKey = stay.room.number;
       const roomCount = roomCounts.get(roomKey) || {
         roomNumber: stay.room.number,
-        roomType: stay.room.type,
+        roomType: stay.room.roomType?.name || "Sin tipo",
         visits: 0
       };
       roomCount.visits += 1;

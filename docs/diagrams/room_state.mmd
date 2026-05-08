@@ -1,0 +1,7 @@
+stateDiagram-v2
+    [*] --> AVAILABLE: Setup Inicial
+    AVAILABLE --> OCCUPIED: Check-In
+    OCCUPIED --> CLEANING: Check-Out
+    CLEANING --> AVAILABLE: Limpieza Completada
+    AVAILABLE --> MAINTENANCE: Reporte de Avería
+    MAINTENANCE --> AVAILABLE: Reparación Exitosa

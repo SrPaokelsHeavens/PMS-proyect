@@ -8,10 +8,11 @@ The old standalone HTML prototype remains in `../index.html`. This folder is the
 
 - Web: React + Vite + TypeScript
 - API: Fastify + TypeScript
-- Database: Prisma ORM with SQLite for local development
+- Database: PostgreSQL + Prisma ORM
+- Realtime sync: Socket.IO events + TanStack Query cache invalidation
 - Shared contracts: Zod schemas and TypeScript types
 
-For a multi-terminal hotel deployment, move the Prisma datasource to PostgreSQL before going live. SQLite is used here so the first iteration can run on this Windows machine without installing a database server.
+PostgreSQL is now the source of truth. Rooms, room groups, day groups, hour plans, rates and overtime rules are read from the API/DB and mirrored into the UI through query invalidation and realtime events.
 
 ## First Run
 
@@ -23,16 +24,21 @@ copy .env.example .env
 copy apps\api\.env.example apps\api\.env
 copy apps\web\.env.example apps\web\.env
 npm.cmd install
+docker compose up -d postgres
 npm.cmd run db:generate
 npm.cmd run db:migrate
 npm.cmd run db:seed
 npm.cmd run dev
 ```
 
+If Docker is not installed on the machine, install PostgreSQL locally and create a database named `hotel_os`, then keep the same `DATABASE_URL` format.
+
 Then open:
 
 - Web app: http://localhost:5173
 - API health: http://localhost:4000/health
+
+For a server deployment use `npm.cmd run db:deploy` instead of `db:migrate` after setting `DATABASE_URL` to the production PostgreSQL connection string.
 
 Demo login:
 

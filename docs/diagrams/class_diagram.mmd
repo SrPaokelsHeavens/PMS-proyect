@@ -1,0 +1,35 @@
+classDiagram
+    class StayService {
+        +checkIn(input: CheckInInput)
+        +checkOut(stayId: string, input: CheckOutInput)
+        +addCharge(input: AddChargeInput)
+    }
+    
+    class GuestService {
+        +upsertGuest(data)
+        +findGuestByDocument(num)
+    }
+    
+    class RateEngine {
+        +selectCurrentRate(assignments)
+        +selectOvertimeRule(room, hourPlanId)
+        +calculateOvertime(planned, actual, grace, rate)
+    }
+    
+    class RealtimeEmitter {
+        +publishDomainEvent(event)
+        +attachRealtime(app)
+    }
+
+    StayService --> GuestService : "valida huéspedes"
+    StayService ..> RateEngine : "calcula costos/tiempos"
+    StayService ..> RealtimeEmitter : "notifica cambios"
+    
+    class Stay {
+        +string id
+        +DateTime plannedCheckOutAt
+        +int overtimeMinutes
+        +status: OPEN | CLOSED
+    }
+    
+    StayService "1" --> "*" Stay : "opera"

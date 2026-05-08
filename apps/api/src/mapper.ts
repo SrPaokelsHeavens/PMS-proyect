@@ -1,4 +1,4 @@
-import type { Room, Stay, Guest, Charge, Payment } from "@prisma/client";
+import type { Room, Stay, Guest, Charge, Payment, RoomType } from "@prisma/client";
 import type { ApiRoom } from "@hotel-os/shared";
 import { selectCurrentRate, type RateAssignment } from "./rates.js";
 
@@ -8,7 +8,7 @@ type StayWithGuestAndCharges = Stay & {
   payments: Payment[];
 };
 
-export function toApiRoom(room: Room & { stays: StayWithGuestAndCharges[]; ratePlans?: RateAssignment[] }): ApiRoom {
+export function toApiRoom(room: Room & { roomType?: RoomType | null; stays: StayWithGuestAndCharges[]; ratePlans?: RateAssignment[] }): ApiRoom {
   const activeStay = room.stays.find((stay) => stay.status === "OPEN");
   const activeRate = selectCurrentRate(room.ratePlans || []);
   const now = new Date();
@@ -39,13 +39,13 @@ export function toApiRoom(room: Room & { stays: StayWithGuestAndCharges[]; rateP
     id: room.id,
     number: room.number,
     floor: room.floor,
-    type: room.type,
+    type: room.roomType?.name || "Sin tipo",
     shortLabel: room.shortLabel,
     status: room.status as ApiRoom["status"],
     computedStatus: computedStatus as ApiRoom["computedStatus"],
     active: room.active,
     notes: room.notes,
-    roomGroupId: room.roomGroupId,
+    roomTypeId: room.roomTypeId,
     baseRateCents: room.baseRateCents,
     activeRate: activeRate
       ? {

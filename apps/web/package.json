@@ -11,9 +11,11 @@
   },
   "dependencies": {
     "@hotel-os/shared": "file:../../packages/shared",
+    "@tanstack/react-query": "^5.100.9",
     "lucide-react": "^1.11.0",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react-dom": "^19.2.5",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@types/react": "^19.0.12",
